@@ -67,23 +67,26 @@ def process_album(mgid):
         "duration": video_msg.video.duration,
     }
 
-    # YAHAN CHANGE HUA HAI (WebAppInfo use kiya hai)
-    markup = InlineKeyboardMarkup()
-    web_app_info = WebAppInfo(url=f"{PUBLIC_URL}/miniapp?vid={vid_id}")
-    markup.add(InlineKeyboardButton(
-        "▶️ PLAY",
-        web_app=web_app_info
-    ))
-
+    # --- FIX: WebApp fail hone par normal URL button use karega ---
     try:
-        bot.send_photo(
-            DEST_CHANNEL,
-            photo_file_id,
-            reply_markup=markup
-        )
-        print(f"[ok] posted to dest channel, vid_id={vid_id}")
+        # Pehle WebApp button try karein (Telegram ke andar khulne ke liye)
+        markup = InlineKeyboardMarkup()
+        web_app_info = WebAppInfo(url=f"{PUBLIC_URL}/miniapp?vid={vid_id}")
+        markup.add(InlineKeyboardButton("▶️ PLAY", web_app=web_app_info))
+        
+        bot.send_photo(DEST_CHANNEL, photo_file_id, reply_markup=markup)
+        print(f"[ok] posted WebApp button to channel, vid_id={vid_id}")
+        
     except Exception as e:
-        print(f"[err] send_photo failed: {e}")
+        print(f"[err] WebApp failed: {e}. Falling back to normal URL button.")
+        try:
+            # Agar WebApp button reject ho jaye, toh normal URL button bhej dein
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("▶️ PLAY", url=f"{PUBLIC_URL}/miniapp?vid={vid_id}"))
+            bot.send_photo(DEST_CHANNEL, photo_file_id, reply_markup=markup)
+            print(f"[ok] posted URL button to channel, vid_id={vid_id}")
+        except Exception as e2:
+            print(f"[err] Fallback URL button also failed: {e2}")
 
 
 # ---------- Flask Routes ----------
