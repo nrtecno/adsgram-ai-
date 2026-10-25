@@ -4,7 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>Video Player</title>
+<!-- Telegram Web App SDK -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- Adsgram SDK -->
 <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
   * { box-sizing: border-box; }
@@ -27,7 +29,7 @@
   }
   #play-btn:active { transform: scale(0.97); }
   #play-btn:disabled { opacity: 0.5; cursor: wait; }
-  #status { margin-top: 20px; font-size: 13px; color: #888; min-height: 18px; }
+  #status { margin-top: 20px; font-size: 14px; color: #aaa; min-height: 20px; }
   #player-container { display: none; height: 100%; background: #000; }
   video { width: 100%; height: 100%; display: block; background: #000; }
   .error { color: #ff6b6b !important; }
@@ -35,81 +37,92 @@
 </head>
 <body>
 
+<!-- Shuruwati Screen (PLAY Button) -->
 <div id="start-screen">
   <h2>▶️ Watch Video</h2>
   <button id="play-btn">PLAY</button>
-  <p id="status"></p>
+  <p id="status">Tap PLAY to watch</p>
 </div>
 
+<!-- Video Player Screen (Shuru me chhupa hua hai) -->
 <div id="player-container">
   <video id="player" controls playsinline preload="metadata"></video>
 </div>
 
 <script>
 (function () {
+  // Telegram WebApp initialize karein
   const tg = window.Telegram && window.Telegram.WebApp;
-  if (tg) { try { tg.ready(); tg.expand(); } catch(e){} }
+  if (tg) { 
+    try { tg.ready(); tg.expand(); } catch(e){} 
+  }
 
+  // URL se Video ID nikaalein
   const params = new URLSearchParams(window.location.search);
   const vidId = params.get('vid');
-  const devMode = params.get('dev') === '1';
-
+  
   const statusEl = document.getElementById('status');
   const playBtn = document.getElementById('play-btn');
 
   if (!vidId) {
-    statusEl.textContent = 'Video ID missing in URL.';
+    statusEl.textContent = 'Error: Video ID missing in URL.';
     statusEl.classList.add('error');
     playBtn.disabled = true;
     return;
   }
 
+  // Adsgram Initialize karein (Block ID: 55977)
   let AdController = null;
   try {
     if (window.Adsgram) {
       AdController = window.Adsgram.init({
-        blockId: "55977" // <--- YAHAN APNI ASLI BLOCK ID DAALEIN
+        blockId: "55977" 
       });
     }
   } catch (e) {
     console.warn('Adsgram init failed', e);
   }
 
+  // Jab user PLAY button dabaye
   playBtn.addEventListener('click', async () => {
     playBtn.disabled = true;
     statusEl.classList.remove('error');
-    statusEl.textContent = '';
-
-    if (devMode || !AdController) {
-      showVideo();
-      return;
+    
+    // 1. Pehle Ad dikhane ki koshish karein
+    if (AdController) {
+      statusEl.textContent = 'Loading ad… Please wait.';
+      try {
+        await AdController.show(); // Ad poora hone ka wait karega
+        console.log("Ad completed successfully");
+      } catch (e) {
+        console.warn('Ad skipped or failed:', e);
+        // Agar ad fail ho jaye (moderation pending ya error), toh user ko atkao mat
+      }
     }
 
-    statusEl.textContent = 'Loading ad…';
-    try {
-      await AdController.show();
-      statusEl.textContent = 'Ad finished. Loading video…';
-      showVideo();
-    } catch (error) {
-      console.warn('Ad error/skip', error);
-      statusEl.textContent = 'Ad not available. Playing video directly...';
-      setTimeout(showVideo, 1000); 
-    }
+    // 2. Ad ke baad Video play karein
+    statusEl.textContent = 'Starting video…';
+    showVideo();
   });
 
+  // Video chalane ka function
   function showVideo() {
     document.getElementById('start-screen').style.display = 'none';
     document.getElementById('player-container').style.display = 'block';
 
     const player = document.getElementById('player');
+    // Video source backend se set karein
     player.src = '/stream/' + encodeURIComponent(vidId);
 
     player.addEventListener('error', () => {
       document.getElementById('player-container').innerHTML =
-        '<p style="padding:20px;color:#ff6b6b;text-align:center">Video load nahi hua.</p>';
+        '<p style="padding:20px;color:#ff6b6b;text-align:center">Video load nahi hua. File 20MB se badi ho sakti hai.</p>';
     });
 
-    player.play().catch(err => console.warn('Autoplay blocked', err));
+    // Video play karein
+    player.play().catch(err => {
+      console.warn('Autoplay blocked by browser:', err);
+    });
   }
 })();
 </script>
