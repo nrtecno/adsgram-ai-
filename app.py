@@ -13,7 +13,6 @@ SOURCE_CHANNEL = int(os.getenv("SOURCE_CHANNEL", "0"))
 DEST_CHANNEL = int(os.getenv("DEST_CHANNEL", "0"))
 PUBLIC_URL = os.getenv("PUBLIC_URL", "").rstrip("/")
 ADMIN_KEY = os.getenv("ADMIN_KEY", "change_me_now")
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB Bot API limit
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN env variable missing")
@@ -21,10 +20,8 @@ if not BOT_TOKEN:
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__, static_folder="static")
 
-# In-memory store: vid_id -> file_id
+# In-memory store
 video_store = {}
-
-# Media group buffer
 media_buffer = {}
 buffer_lock = threading.Lock()
 
@@ -33,7 +30,6 @@ buffer_lock = threading.Lock()
 def handle_channel_post(message):
     if message.chat.id != SOURCE_CHANNEL:
         return
-
     if not message.media_group_id:
         return
 
@@ -42,7 +38,6 @@ def handle_channel_post(message):
         media_buffer.setdefault(mgid, []).append(message)
 
     threading.Timer(3.0, process_album, args=[mgid]).start()
-
 
 def process_album(mgid):
     with buffer_lock:
@@ -54,7 +49,6 @@ def process_album(mgid):
     video_msg = next((m for m in msgs if m.content_type == "video"), None)
 
     if not photo_msg or not video_msg:
-        print(f"[skip] album {mgid} me photo ya video missing")
         return
 
     video_file_id = video_msg.video.file_id
@@ -67,33 +61,22 @@ def process_album(mgid):
         "duration": video_msg.video.duration,
     }
 
-    # --- FIX: WebApp fail hone par normal URL button use karega ---
+    # YAHAN STRICT WEBAPP BUTTON HAI (KOI FALLBACK NAHI)
+    markup = InlineKeyboardMarkup()
+    web_app_info = WebAppInfo(url=f"{PUBLIC_URL}/miniapp?vid={vid_id}")
+    markup.add(InlineKeyboardButton("▶️ PLAY", web_app=web_app_info))
+
     try:
-        # Pehle WebApp button try karein (Telegram ke andar khulne ke liye)
-        markup = InlineKeyboardMarkup()
-        web_app_info = WebAppInfo(url=f"{PUBLIC_URL}/miniapp?vid={vid_id}")
-        markup.add(InlineKeyboardButton("▶️ PLAY", web_app=web_app_info))
-        
         bot.send_photo(DEST_CHANNEL, photo_file_id, reply_markup=markup)
-        print(f"[ok] posted WebApp button to channel, vid_id={vid_id}")
-        
+        print(f"[ok] posted WebApp button, vid_id={vid_id}")
     except Exception as e:
-        print(f"[err] WebApp failed: {e}. Falling back to normal URL button.")
-        try:
-            # Agar WebApp button reject ho jaye, toh normal URL button bhej dein
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("▶️ PLAY", url=f"{PUBLIC_URL}/miniapp?vid={vid_id}"))
-            bot.send_photo(DEST_CHANNEL, photo_file_id, reply_markup=markup)
-            print(f"[ok] posted URL button to channel, vid_id={vid_id}")
-        except Exception as e2:
-            print(f"[err] Fallback URL button also failed: {e2}")
+        print(f"[ERROR] WebApp button failed: {e}")
 
 
 # ---------- Flask Routes ----------
 @app.route("/health")
 def health():
     return "OK", 200
-
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
@@ -103,11 +86,9 @@ def webhook():
         return "", 200
     return "", 403
 
-
 @app.route("/miniapp")
 def miniapp_page():
     return send_from_directory("static", "miniapp.html")
-
 
 @app.route("/stream/<vid_id>")
 def stream_video(vid_id):
@@ -116,11 +97,9 @@ def stream_video(vid_id):
         abort(404, "video not found")
 
     file_id = entry["file_id"]
-
     try:
         file_info = bot.get_file(file_id)
     except Exception as e:
-        print(f"[err] get_file: {e}")
         abort(500, "Telegram file fetch failed")
 
     tg_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
@@ -128,18 +107,12 @@ def stream_video(vid_id):
     range_header = request.headers.get("Range")
 
     if not range_header:
-        headers = {
-            "Content-Type": "video/mp4",
-            "Accept-Ranges": "bytes",
-            "Content-Length": str(file_size),
-            "Cache-Control": "no-store",
-        }
+        headers = {"Content-Type": "video/mp4", "Accept-Ranges": "bytes", "Content-Length": str(file_size)}
         def gen_full():
             with requests.get(tg_url, stream=True, timeout=30) as r:
                 r.raise_for_status()
                 for chunk in r.iter_content(chunk_size=64 * 1024):
-                    if chunk:
-                        yield chunk
+                    if chunk: yield chunk
         return Response(gen_full(), status=200, headers=headers)
 
     try:
@@ -159,18 +132,15 @@ def stream_video(vid_id):
         "Accept-Ranges": "bytes",
         "Content-Range": f"bytes {start}-{end}/{file_size}",
         "Content-Length": str(chunk_size),
-        "Cache-Control": "no-store",
     }
 
     def gen_range():
         with requests.get(tg_url, headers={"Range": f"bytes={start}-{end}"}, stream=True, timeout=30) as r:
             r.raise_for_status()
             for chunk in r.iter_content(chunk_size=64 * 1024):
-                if chunk:
-                    yield chunk
+                if chunk: yield chunk
 
     return Response(gen_range(), status=206, headers=headers)
-
 
 @app.route("/admin/set-webhook")
 def admin_set_webhook():
@@ -180,7 +150,6 @@ def admin_set_webhook():
     time.sleep(1)
     ok = bot.set_webhook(url=f"{PUBLIC_URL}/{BOT_TOKEN}")
     return jsonify({"ok": ok, "url": f"{PUBLIC_URL}/{BOT_TOKEN}"})
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
