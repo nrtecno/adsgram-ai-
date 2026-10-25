@@ -6,7 +6,7 @@ import threading
 import requests
 from flask import Flask, request, Response, send_from_directory, jsonify, abort
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Update, WebAppInfo
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Update
 
 # ---------- Config ----------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -40,7 +40,6 @@ buffer_lock = threading.Lock()
 # ---------- Bot Handler (Private Chat) ----------
 @bot.message_handler(content_types=["photo", "video"])
 def handle_bot_upload(message):
-    # Media group (album) buffer logic
     if not message.media_group_id:
         bot.reply_to(message, "⚠️ Please send the Photo and Video **together** as an album.")
         return
@@ -67,17 +66,18 @@ def process_upload(mgid, chat_id):
     video_file_id = video_msg.video.file_id
     photo_file_id = photo_msg.photo[-1].file_id
 
-    # Generate Unique String
     unique_id = uuid.uuid4().hex[:10].upper()
     
-    # Save to DB
     video_db[unique_id] = video_file_id
     save_db(video_db)
 
-    # Send to Destination Channel
+    # Bot ka username nikaalein (Channel ke liye URL button banane ke liye)
+    bot_username = bot.get_me().username
+    # Direct Mini App Link with startapp parameter
+    mini_app_url = f"https://t.me/{bot_username}/Play?startapp={unique_id}"
+
     markup = InlineKeyboardMarkup()
-    web_app_info = WebAppInfo(url=f"{PUBLIC_URL}/miniapp?id={unique_id}")
-    markup.add(InlineKeyboardButton("▶️ PLAY", web_app=web_app_info))
+    markup.add(InlineKeyboardButton("▶️ PLAY", url=mini_app_url))
 
     try:
         bot.send_photo(DEST_CHANNEL, photo_file_id, reply_markup=markup)
