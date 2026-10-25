@@ -11,7 +11,12 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Update, We
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SOURCE_CHANNEL = int(os.getenv("SOURCE_CHANNEL", "0"))
 DEST_CHANNEL = int(os.getenv("DEST_CHANNEL", "0"))
+
+# URL ko safe banate hain (Agar https nahi laga hai toh khud laga dega)
 PUBLIC_URL = os.getenv("PUBLIC_URL", "").rstrip("/")
+if PUBLIC_URL and not PUBLIC_URL.startswith("http"):
+    PUBLIC_URL = "https://" + PUBLIC_URL
+
 ADMIN_KEY = os.getenv("ADMIN_KEY", "change_me_now")
 
 if not BOT_TOKEN:
@@ -61,16 +66,28 @@ def process_album(mgid):
         "duration": video_msg.video.duration,
     }
 
-    # YAHAN STRICT WEBAPP BUTTON HAI (KOI FALLBACK NAHI)
-    markup = InlineKeyboardMarkup()
-    web_app_info = WebAppInfo(url=f"{PUBLIC_URL}/miniapp?vid={vid_id}")
-    markup.add(InlineKeyboardButton("▶️ PLAY", web_app=web_app_info))
+    play_url = f"{PUBLIC_URL}/miniapp?vid={vid_id}"
+    print(f"DEBUG: Trying to send button with URL: {play_url}")
 
+    # --- MAIN FIX: TRY WEBAPP, IF FAILS, FALLBACK TO URL ---
     try:
+        # Pehle WebApp button try karein (Telegram ke andar khulne ke liye)
+        markup = InlineKeyboardMarkup()
+        web_app_info = WebAppInfo(url=play_url)
+        markup.add(InlineKeyboardButton("▶️ PLAY (Mini App)", web_app=web_app_info))
+        
         bot.send_photo(DEST_CHANNEL, photo_file_id, reply_markup=markup)
-        print(f"[ok] posted WebApp button, vid_id={vid_id}")
+        print(f"[OK] WebApp button successfully sent to channel!")
+        
     except Exception as e:
-        print(f"[ERROR] WebApp button failed: {e}")
+        print(f"[ERROR] WebApp failed! Reason: {e}")
+        print(f"[FALLBACK] Sending normal URL button so channel doesn't stop...")
+        
+        # Agar WebApp fail ho jaye, toh normal URL button bhejein
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("▶️ PLAY (Browser)", url=play_url))
+        bot.send_photo(DEST_CHANNEL, photo_file_id, reply_markup=markup)
+        print(f"[OK] Normal URL button sent.")
 
 
 # ---------- Flask Routes ----------
