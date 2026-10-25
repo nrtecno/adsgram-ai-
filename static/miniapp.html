@@ -38,7 +38,6 @@
 </head>
 <body>
 
-<!-- Initial Screen -->
 <div id="main-screen" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
   <div class="ticket-box">
     <p>Video ID</p>
@@ -49,7 +48,6 @@
   <p id="status">Click Play to watch</p>
 </div>
 
-<!-- Video Player Screen -->
 <div id="player-container">
   <video id="player" controls playsinline preload="metadata"></video>
 </div>
@@ -59,8 +57,14 @@
   const tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch(e){} }
 
-  const params = new URLSearchParams(window.location.search);
-  const vidId = params.get('id'); // Ab hum 'id' use kar rahe hain
+  // Telegram startapp parameter se ID nikaalein, ya normal URL se (testing ke liye)
+  let vidId = null;
+  if (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
+      vidId = tg.initDataUnsafe.start_param;
+  } else {
+      const params = new URLSearchParams(window.location.search);
+      vidId = params.get('id');
+  }
   
   const displayId = document.getElementById('display-id');
   const statusEl = document.getElementById('status');
@@ -68,16 +72,14 @@
 
   if (!vidId) {
     displayId.textContent = "ERROR";
-    statusEl.textContent = 'Video ID missing in URL.';
+    statusEl.textContent = 'Video ID missing.';
     statusEl.style.color = '#ff6b6b';
     playBtn.disabled = true;
     return;
   }
 
-  // Show the ID inside the box
   displayId.textContent = vidId;
 
-  // Adsgram Initialize
   let AdController = null;
   try {
     if (window.Adsgram) {
