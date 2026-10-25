@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import json
 import threading
 import requests
 from flask import Flask, request, Response, send_from_directory, jsonify, abort
@@ -9,14 +10,8 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Update, We
 
 # ---------- Config ----------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-SOURCE_CHANNEL = int(os.getenv("SOURCE_CHANNEL", "0"))
 DEST_CHANNEL = int(os.getenv("DEST_CHANNEL", "0"))
-
-# URL ko safe banate hain (Agar https nahi laga hai toh khud laga dega)
 PUBLIC_URL = os.getenv("PUBLIC_URL", "").rstrip("/")
-if PUBLIC_URL and not PUBLIC_URL.startswith("http"):
-    PUBLIC_URL = "https://" + PUBLIC_URL
-
 ADMIN_KEY = os.getenv("ADMIN_KEY", "change_me_now")
 
 if not BOT_TOKEN:
@@ -25,26 +20,38 @@ if not BOT_TOKEN:
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__, static_folder="static")
 
-# In-memory store
-video_store = {}
+# Database File
+DB_FILE = "db.json"
+
+def load_db():
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_db(data):
+    with open(DB_FILE, "w") as f:
+        json.dump(data, f)
+
+video_db = load_db()
 media_buffer = {}
 buffer_lock = threading.Lock()
 
-# ---------- Media Group Handler ----------
-@bot.channel_post_handler(content_types=["photo", "video"])
-def handle_channel_post(message):
-    if message.chat.id != SOURCE_CHANNEL:
-        return
+# ---------- Bot Handler (Private Chat) ----------
+@bot.message_handler(content_types=["photo", "video"])
+def handle_bot_upload(message):
+    # Media group (album) buffer logic
     if not message.media_group_id:
+        bot.reply_to(message, "⚠️ Please send the Photo and Video **together** as an album.")
         return
 
     mgid = message.media_group_id
     with buffer_lock:
         media_buffer.setdefault(mgid, []).append(message)
 
-    threading.Timer(3.0, process_album, args=[mgid]).start()
+    threading.Timer(3.0, process_upload, args=[mgid, message.chat.id]).start()
 
-def process_album(mgid):
+def process_upload(mgid, chat_id):
     with buffer_lock:
         msgs = media_buffer.pop(mgid, [])
     if not msgs:
@@ -54,40 +61,29 @@ def process_album(mgid):
     video_msg = next((m for m in msgs if m.content_type == "video"), None)
 
     if not photo_msg or not video_msg:
+        bot.send_message(chat_id, "❌ Error: Please send exactly 1 Photo and 1 Video together.")
         return
 
     video_file_id = video_msg.video.file_id
     photo_file_id = photo_msg.photo[-1].file_id
 
-    vid_id = uuid.uuid4().hex[:16]
-    video_store[vid_id] = {
-        "file_id": video_file_id,
-        "size": video_msg.video.file_size,
-        "duration": video_msg.video.duration,
-    }
+    # Generate Unique String
+    unique_id = uuid.uuid4().hex[:10].upper()
+    
+    # Save to DB
+    video_db[unique_id] = video_file_id
+    save_db(video_db)
 
-    play_url = f"{PUBLIC_URL}/miniapp?vid={vid_id}"
-    print(f"DEBUG: Trying to send button with URL: {play_url}")
+    # Send to Destination Channel
+    markup = InlineKeyboardMarkup()
+    web_app_info = WebAppInfo(url=f"{PUBLIC_URL}/miniapp?id={unique_id}")
+    markup.add(InlineKeyboardButton("▶️ PLAY", web_app=web_app_info))
 
-    # --- MAIN FIX: TRY WEBAPP, IF FAILS, FALLBACK TO URL ---
     try:
-        # Pehle WebApp button try karein (Telegram ke andar khulne ke liye)
-        markup = InlineKeyboardMarkup()
-        web_app_info = WebAppInfo(url=play_url)
-        markup.add(InlineKeyboardButton("▶️ PLAY (Mini App)", web_app=web_app_info))
-        
         bot.send_photo(DEST_CHANNEL, photo_file_id, reply_markup=markup)
-        print(f"[OK] WebApp button successfully sent to channel!")
-        
+        bot.send_message(chat_id, f"✅ Uploaded successfully!\nYour Video ID is: `{unique_id}`", parse_mode="Markdown")
     except Exception as e:
-        print(f"[ERROR] WebApp failed! Reason: {e}")
-        print(f"[FALLBACK] Sending normal URL button so channel doesn't stop...")
-        
-        # Agar WebApp fail ho jaye, toh normal URL button bhejein
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("▶️ PLAY (Browser)", url=play_url))
-        bot.send_photo(DEST_CHANNEL, photo_file_id, reply_markup=markup)
-        print(f"[OK] Normal URL button sent.")
+        bot.send_message(chat_id, f"❌ Failed to send to channel. Error: {e}")
 
 
 # ---------- Flask Routes ----------
@@ -109,18 +105,17 @@ def miniapp_page():
 
 @app.route("/stream/<vid_id>")
 def stream_video(vid_id):
-    entry = video_store.get(vid_id)
-    if not entry:
-        abort(404, "video not found")
+    file_id = video_db.get(vid_id)
+    if not file_id:
+        abort(404, "Video not found in database")
 
-    file_id = entry["file_id"]
     try:
         file_info = bot.get_file(file_id)
     except Exception as e:
         abort(500, "Telegram file fetch failed")
 
     tg_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
-    file_size = file_info.file_size or entry.get("size") or 0
+    file_size = file_info.file_size
     range_header = request.headers.get("Range")
 
     if not range_header:
@@ -166,7 +161,7 @@ def admin_set_webhook():
     bot.remove_webhook()
     time.sleep(1)
     ok = bot.set_webhook(url=f"{PUBLIC_URL}/{BOT_TOKEN}")
-    return jsonify({"ok": ok, "url": f"{PUBLIC_URL}/{BOT_TOKEN}"})
+    return jsonify({"ok": ok})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
