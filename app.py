@@ -5,7 +5,7 @@ import threading
 import requests
 from flask import Flask, request, Response, send_from_directory, jsonify, abort
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Update
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Update, WebAppInfo
 
 # ---------- Config ----------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -31,11 +31,9 @@ buffer_lock = threading.Lock()
 # ---------- Media Group Handler ----------
 @bot.channel_post_handler(content_types=["photo", "video"])
 def handle_channel_post(message):
-    # Only accept from source channel
     if message.chat.id != SOURCE_CHANNEL:
         return
 
-    # Album (media group) hi process karenge
     if not message.media_group_id:
         return
 
@@ -43,7 +41,6 @@ def handle_channel_post(message):
     with buffer_lock:
         media_buffer.setdefault(mgid, []).append(message)
 
-    # 3 sec baad album complete hoga, tab process karo
     threading.Timer(3.0, process_album, args=[mgid]).start()
 
 
@@ -60,10 +57,6 @@ def process_album(mgid):
         print(f"[skip] album {mgid} me photo ya video missing")
         return
 
-    # Size check (Bot API limitation)
-    if video_msg.video.file_size and video_msg.video.file_size > MAX_FILE_SIZE:
-        print(f"[warn] video {video_msg.video.file_size} bytes > 20MB limit")
-
     video_file_id = video_msg.video.file_id
     photo_file_id = photo_msg.photo[-1].file_id
 
@@ -74,10 +67,12 @@ def process_album(mgid):
         "duration": video_msg.video.duration,
     }
 
+    # YAHAN CHANGE HUA HAI (WebAppInfo use kiya hai)
     markup = InlineKeyboardMarkup()
+    web_app_info = WebAppInfo(url=f"{PUBLIC_URL}/miniapp?vid={vid_id}")
     markup.add(InlineKeyboardButton(
         "▶️ PLAY",
-        url=f"{PUBLIC_URL}/miniapp?vid={vid_id}"
+        web_app=web_app_info
     ))
 
     try:
@@ -113,23 +108,20 @@ def miniapp_page():
 
 @app.route("/stream/<vid_id>")
 def stream_video(vid_id):
-    """Video ko Range support ke saath Telegram CDN se proxy karta hai."""
     entry = video_store.get(vid_id)
     if not entry:
         abort(404, "video not found")
 
     file_id = entry["file_id"]
 
-    # Bot API se file path lein (sirf <=20MB ke liye kaam karega)
     try:
         file_info = bot.get_file(file_id)
     except Exception as e:
         print(f"[err] get_file: {e}")
-        abort(500, "Telegram file fetch failed (file may exceed 20MB)")
+        abort(500, "Telegram file fetch failed")
 
     tg_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
     file_size = file_info.file_size or entry.get("size") or 0
-
     range_header = request.headers.get("Range")
 
     if not range_header:
@@ -139,17 +131,14 @@ def stream_video(vid_id):
             "Content-Length": str(file_size),
             "Cache-Control": "no-store",
         }
-
         def gen_full():
             with requests.get(tg_url, stream=True, timeout=30) as r:
                 r.raise_for_status()
                 for chunk in r.iter_content(chunk_size=64 * 1024):
                     if chunk:
                         yield chunk
-
         return Response(gen_full(), status=200, headers=headers)
 
-    # Parse Range: bytes=start-end
     try:
         unit, rng = range_header.split("=", 1)
         start_s, end_s = rng.split("-", 1)
@@ -171,12 +160,7 @@ def stream_video(vid_id):
     }
 
     def gen_range():
-        with requests.get(
-            tg_url,
-            headers={"Range": f"bytes={start}-{end}"},
-            stream=True,
-            timeout=30,
-        ) as r:
+        with requests.get(tg_url, headers={"Range": f"bytes={start}-{end}"}, stream=True, timeout=30) as r:
             r.raise_for_status()
             for chunk in r.iter_content(chunk_size=64 * 1024):
                 if chunk:
@@ -187,11 +171,8 @@ def stream_video(vid_id):
 
 @app.route("/admin/set-webhook")
 def admin_set_webhook():
-    """Ek baar call karke webhook set karein. ?key=ADMIN_KEY required."""
     if request.args.get("key") != ADMIN_KEY:
         abort(403)
-    if not PUBLIC_URL:
-        return "PUBLIC_URL env not set", 400
     bot.remove_webhook()
     time.sleep(1)
     ok = bot.set_webhook(url=f"{PUBLIC_URL}/{BOT_TOKEN}")
