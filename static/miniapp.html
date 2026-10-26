@@ -4,14 +4,12 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>Video Player</title>
-<!-- Telegram Web App SDK -->
+
+<!-- 1. Telegram Web App SDK -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-<!-- ========================================== -->
-<!-- यहाँ Monetag का स्क्रिप्ट कोड पेस्ट करें -->
-<!-- ========================================== -->
-<!-- नीचे दिए गए कोड को अपने Monetag डैशबोर्ड से कॉपी किए गए कोड से बदलें -->
-<script src="https://YOUR_MONETAG_DOMAIN/vignette.min.js" data-zone="YOUR_ZONE_ID" data-sdk="show_YOUR_ZONE_ID"></script>
+<!-- 2. Monetag SDK (आपका दिया हुआ कोड) -->
+<script src='//libtl.com/sdk.js' data-zone='12127485' data-sdk='show_12127485'></script>
 
 <style>
   * { box-sizing: border-box; }
@@ -53,17 +51,17 @@
 
 <!-- डाउनलोड बटन -->
 <div class="bottom-bar">
-  <button id="download-btn">⬇️ Download Video (Watch Ad)</button>
+  <button id="download-btn" disabled>⬇️ Download Video (Watch Ad)</button>
   <p id="status">वीडियो लोड हो रही है...</p>
 </div>
 
 <script>
 (function () {
-  // --- 1. Telegram WebApp को इनिशियलाइज करें ---
+  // --- 1. Telegram WebApp Initialization ---
   const tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch(e){} }
 
-  // --- 2. URL या Telegram start_param से Video ID निकालें ---
+  // --- 2. Get Video ID ---
   let vidId = null;
   if (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
       vidId = tg.initDataUnsafe.start_param;
@@ -82,52 +80,45 @@
     return;
   }
 
-  // --- 3. वीडियो सोर्स सेट करें (बिना किसी ऐड के तुरंत चलेगी) ---
+  // --- 3. Load Video Instantly (No Ad Required) ---
   player.src = '/stream/' + encodeURIComponent(vidId);
   
   player.addEventListener('canplay', () => {
       statusEl.textContent = 'वीडियो तैयार है।';
-      // बटन को एक्टिवेट करें ताकि यूजर ऐड देखकर डाउनलोड अनलॉक कर सके
-      downloadBtn.disabled = false;
-      // ऑटोप्ले की कोशिश करें
-      player.play().catch(e => console.log("Autoplay blocked, user needs to click play."));
+      downloadBtn.disabled = false; // Enable download button
+      player.play().catch(e => console.log("Autoplay blocked."));
   });
 
-  // --- 4. Monetag ऐड को डाउनलोड बटन से जोड़ें ---
-  // Monetag स्क्रिप्ट लोड होने के बाद एक ग्लोबल फंक्शन देता है जैसे: show_1234567()
-  // आपको इसे अपने Monetag कोड से मिले फंक्शन नाम से बदलना होगा।
-  // उदाहरण के लिए, अगर आपका data-sdk="show_987654" है, तो फंक्शन show_987654() होगा।
-
-  // ध्यान दें: 'show_YOUR_ZONE_ID' को अपने असली फंक्शन नाम से बदलें
-  const adFunctionName = 'show_YOUR_ZONE_ID'; 
-
+  // --- 4. Monetag Ad Logic on Download Button ---
   downloadBtn.addEventListener('click', function() {
-    // बटन को डिसेबल करें ताकि यूजर बार-बार क्लिक न करे
     downloadBtn.disabled = true;
     statusEl.textContent = 'ऐड लोड हो रहा है... कृपया प्रतीक्षा करें।';
     statusEl.style.color = '#2ea6ff';
 
-    // चेक करें कि Monetag का फंक्शन लोड हो चुका है या नहीं
-    if (typeof window[adFunctionName] === 'function') {
-        // Monetag फंक्शन को कॉल करें (यह Promise रिटर्न करता है)
-        window[adFunctionName]().then(() => {
-            // ऐड पूरा होने पर यह कोड चलेगा
+    // Check if Monetag function is loaded
+    if (typeof show_12127485 === 'function') {
+        
+        // Call the Monetag function
+        show_12127485().then(() => {
+            // This code runs ONLY if the user watches the full ad
             statusEl.textContent = '✅ डाउनलोड अनलॉक हो गया!';
             statusEl.style.color = '#4caf50';
             
-            // यहाँ आप अपना डाउनलोड लॉजिक डाल सकते हैं
+            // User's requested alert
+            alert('You have seen an ad!');
+            
+            // 👇 यहाँ आप अपना असली डाउनलोड लॉजिक डाल सकते हैं। 
             // जैसे: window.open('/stream/' + vidId, '_blank');
             
         }).catch((error) => {
-            // अगर यूजर ऐड बंद कर देता है या कोई एरर आता है
+            // This code runs if the user skips or closes the ad early
             console.warn('Ad error/skipped:', error);
-            statusEl.textContent = 'ऐड पूरा नहीं हुआ। कृपया दोबारा प्रयास करें।';
+            statusEl.textContent = 'ऐड पूरा नहीं हुआ। कृपया दोबारा कोशिश करें।';
             statusEl.style.color = '#ff6b6b';
-            downloadBtn.disabled = false; // बटन फिर से चालू करें
+            downloadBtn.disabled = false; // Re-enable button
         });
     } else {
-        // अगर स्क्रिप्ट अभी तक लोड नहीं हुई है
-        statusEl.textContent = 'ऐड सर्विस लोड नहीं हो पाई। कृपया रीफ्रेश करें।';
+        statusEl.textContent = 'ऐड सर्विस लोड नहीं हो पाई। कृपया पेज रीफ्रेश करें।';
         statusEl.style.color = '#ff6b6b';
         downloadBtn.disabled = false;
     }
