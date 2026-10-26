@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>Video Player</title>
 
-<!-- 1. Telegram Web App SDK -->
+<!-- Telegram Web App SDK -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-<!-- 2. Monetag SDK (आपका दिया हुआ कोड) -->
+<!-- Monetag SDK (Aapka diya hua code) -->
 <script src='//libtl.com/sdk.js' data-zone='12127485' data-sdk='show_12127485'></script>
 
 <style>
@@ -18,50 +18,51 @@
     background: #000; color: #fff;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     display: flex; flex-direction: column;
+    overflow: hidden;
   }
   
-  /* वीडियो एरिया */
-  #player-container { flex-grow: 1; display: flex; align-items: center; justify-content: center; background: #000; }
-  video { width: 100%; max-height: 100%; display: block; }
-  
-  /* नीचे का एक्शन बार */
-  .bottom-bar {
-    padding: 15px; background: #1a1a1a; text-align: center;
-    border-top: 1px solid #333;
+  /* Shuruwati Screen (Play Button) */
+  #start-screen {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    height: 100%; padding: 20px; text-align: center;
   }
-  
-  #download-btn {
+  #start-screen h2 { margin: 0 0 24px; font-weight: 600; }
+  #play-btn {
     background: #2ea6ff; color: #fff; border: none;
-    padding: 15px; font-size: 16px; font-weight: bold;
-    border-radius: 10px; cursor: pointer; width: 100%;
-    transition: 0.2s;
+    padding: 18px 70px; font-size: 22px; font-weight: 600;
+    border-radius: 14px; cursor: pointer; transition: transform 0.1s;
   }
-  #download-btn:active { transform: scale(0.98); }
-  #download-btn:disabled { background: #444; color: #888; cursor: not-allowed; }
+  #play-btn:active { transform: scale(0.97); }
+  #play-btn:disabled { opacity: 0.5; cursor: wait; }
+  #status { margin-top: 20px; font-size: 14px; color: #aaa; min-height: 20px; }
   
-  #status { margin-top: 10px; font-size: 14px; color: #aaa; min-height: 20px; }
+  /* Video Player Area */
+  #player-container { display: none; height: 100%; background: #000; }
+  video { width: 100%; height: 100%; display: block; background: #000; }
 </style>
 </head>
 <body>
 
-<!-- वीडियो प्लेयर -->
+<!-- Shuruwati Screen -->
+<div id="start-screen">
+  <h2>▶️ Watch Video</h2>
+  <button id="play-btn">PLAY</button>
+  <p id="status">Tap Play to watch</p>
+</div>
+
+<!-- Video Player Screen -->
 <div id="player-container">
   <video id="player" controls playsinline preload="metadata"></video>
 </div>
 
-<!-- डाउनलोड बटन -->
-<div class="bottom-bar">
-  <button id="download-btn" disabled>⬇️ Download Video (Watch Ad)</button>
-  <p id="status">वीडियो लोड हो रही है...</p>
-</div>
-
 <script>
 (function () {
-  // --- 1. Telegram WebApp Initialization ---
+  // Telegram WebApp Initialize
   const tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch(e){} }
 
-  // --- 2. Get Video ID ---
+  // URL ya Telegram start_param se Video ID nikaalein
   let vidId = null;
   if (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
       vidId = tg.initDataUnsafe.start_param;
@@ -72,57 +73,63 @@
   
   const player = document.getElementById('player');
   const statusEl = document.getElementById('status');
-  const downloadBtn = document.getElementById('download-btn');
+  const playBtn = document.getElementById('play-btn');
 
   if (!vidId) {
     statusEl.textContent = 'Error: Video ID missing.';
     statusEl.style.color = '#ff6b6b';
+    playBtn.disabled = true;
     return;
   }
 
-  // --- 3. Load Video Instantly (No Ad Required) ---
-  player.src = '/stream/' + encodeURIComponent(vidId);
-  
-  player.addEventListener('canplay', () => {
-      statusEl.textContent = 'वीडियो तैयार है।';
-      downloadBtn.disabled = false; // Enable download button
-      player.play().catch(e => console.log("Autoplay blocked."));
-  });
-
-  // --- 4. Monetag Ad Logic on Download Button ---
-  downloadBtn.addEventListener('click', function() {
-    downloadBtn.disabled = true;
-    statusEl.textContent = 'ऐड लोड हो रहा है... कृपया प्रतीक्षा करें।';
+  // Jab user Play button dabaye
+  playBtn.addEventListener('click', function() {
+    playBtn.disabled = true;
+    statusEl.textContent = 'Loading ad… Please wait.';
     statusEl.style.color = '#2ea6ff';
 
-    // Check if Monetag function is loaded
+    // Monetag Ad Function Call
     if (typeof show_12127485 === 'function') {
         
-        // Call the Monetag function
         show_12127485().then(() => {
-            // This code runs ONLY if the user watches the full ad
-            statusEl.textContent = '✅ डाउनलोड अनलॉक हो गया!';
+            // Ad poora hone par ye code chalega
+            statusEl.textContent = 'Ad finished. Starting video…';
             statusEl.style.color = '#4caf50';
-            
-            // User's requested alert
-            alert('You have seen an ad!');
-            
-            // 👇 यहाँ आप अपना असली डाउनलोड लॉजिक डाल सकते हैं। 
-            // जैसे: window.open('/stream/' + vidId, '_blank');
+            showVideo(); // Video play karein
             
         }).catch((error) => {
-            // This code runs if the user skips or closes the ad early
-            console.warn('Ad error/skipped:', error);
-            statusEl.textContent = 'ऐड पूरा नहीं हुआ। कृपया दोबारा कोशिश करें।';
+            // Agar user ad skip kar de ya koi error aaye
+            console.warn('Ad skipped or error:', error);
+            statusEl.textContent = 'Ad skipped. Starting video…';
             statusEl.style.color = '#ff6b6b';
-            downloadBtn.disabled = false; // Re-enable button
+            // Ad fail hone par bhi video play kar dein taaki user atke nahi
+            showVideo(); 
         });
     } else {
-        statusEl.textContent = 'ऐड सर्विस लोड नहीं हो पाई। कृपया पेज रीफ्रेश करें।';
-        statusEl.style.color = '#ff6b6b';
-        downloadBtn.disabled = false;
+        // Agar ad blocker wagera ki wajah se script load na ho
+        console.warn('Monetag script not loaded.');
+        statusEl.textContent = 'Ad service unavailable. Starting video…';
+        showVideo();
     }
   });
+
+  // Video play karne ka function
+  function showVideo() {
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('player-container').style.display = 'block';
+
+    player.src = '/stream/' + encodeURIComponent(vidId);
+    
+    player.addEventListener('error', () => {
+      document.getElementById('player-container').innerHTML =
+        '<p style="padding:20px;color:#ff6b6b;text-align:center">Video load nahi hua. File 20MB se badi ho sakti hai.</p>';
+    });
+
+    // Video play karein
+    player.play().catch(err => {
+      console.warn('Autoplay blocked:', err);
+    });
+  }
 
 })();
 </script>
