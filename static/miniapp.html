@@ -58,11 +58,11 @@
   // Video source set karein
   player.src = '/stream/' + encodeURIComponent(vidId);
 
-  // Adsgram Init (Block ID: 55977)
+  // Adsgram Init (Naya Block ID: int-56048)
   let AdController = null;
   try {
     if (window.Adsgram) {
-      AdController = window.Adsgram.init({ blockId: "55977" });
+      AdController = window.Adsgram.init({ blockId: "int-56048" }); // <-- Yahan naya ID daala hai
     }
   } catch (e) {
     console.warn('Adsgram init failed', e);
