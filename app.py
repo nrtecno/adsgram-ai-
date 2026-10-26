@@ -37,7 +37,7 @@ video_db = load_db()
 media_buffer = {}
 buffer_lock = threading.Lock()
 
-# ---------- Bot Handler (Private Chat) ----------
+# ---------- Bot Handler (Private Chat Upload) ----------
 @bot.message_handler(content_types=["photo", "video"])
 def handle_bot_upload(message):
     if not message.media_group_id:
@@ -66,21 +66,26 @@ def process_upload(mgid, chat_id):
     video_file_id = video_msg.video.file_id
     photo_file_id = photo_msg.photo[-1].file_id
 
+    # Generate Unique ID
     unique_id = uuid.uuid4().hex[:10].upper()
     
+    # Save to DB
     video_db[unique_id] = video_file_id
     save_db(video_db)
 
-    # Bot ka username nikaalein (Channel ke liye URL button banane ke liye)
+    # Bot Username & Mini App Link
     bot_username = bot.get_me().username
-    # Direct Mini App Link with startapp parameter
     mini_app_url = f"https://t.me/{bot_username}/Play?startapp={unique_id}"
 
+    # Channel Button Setup
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("▶️ PLAY", url=mini_app_url))
+    markup.add(InlineKeyboardButton("👉 Play Online Free 🍑💦", url=mini_app_url))
+
+    # Channel Caption Text
+    caption_text = "🎬 Watch this video for FREE!\n\n▶️ Tap the button below to play instantly"
 
     try:
-        bot.send_photo(DEST_CHANNEL, photo_file_id, reply_markup=markup)
+        bot.send_photo(DEST_CHANNEL, photo_file_id, caption=caption_text, reply_markup=markup)
         bot.send_message(chat_id, f"✅ Uploaded successfully!\nYour Video ID is: `{unique_id}`", parse_mode="Markdown")
     except Exception as e:
         bot.send_message(chat_id, f"❌ Failed to send to channel. Error: {e}")
