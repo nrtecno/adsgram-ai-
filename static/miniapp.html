@@ -4,8 +4,15 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>Video Player</title>
+<!-- Telegram Web App SDK -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+
+<!-- ========================================== -->
+<!-- यहाँ Monetag का स्क्रिप्ट कोड पेस्ट करें -->
+<!-- ========================================== -->
+<!-- नीचे दिए गए कोड को अपने Monetag डैशबोर्ड से कॉपी किए गए कोड से बदलें -->
+<script src="https://YOUR_MONETAG_DOMAIN/vignette.min.js" data-zone="YOUR_ZONE_ID" data-sdk="show_YOUR_ZONE_ID"></script>
+
 <style>
   * { box-sizing: border-box; }
   body {
@@ -15,30 +22,48 @@
     display: flex; flex-direction: column;
   }
   
-  #player-container { flex-grow: 1; display: flex; align-items: center; justify-content: center; }
+  /* वीडियो एरिया */
+  #player-container { flex-grow: 1; display: flex; align-items: center; justify-content: center; background: #000; }
   video { width: 100%; max-height: 100%; display: block; }
   
-  #status-overlay {
-    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.7); padding: 8px 15px; border-radius: 20px;
-    font-size: 14px; color: #2ea6ff; z-index: 10; display: none;
+  /* नीचे का एक्शन बार */
+  .bottom-bar {
+    padding: 15px; background: #1a1a1a; text-align: center;
+    border-top: 1px solid #333;
   }
+  
+  #download-btn {
+    background: #2ea6ff; color: #fff; border: none;
+    padding: 15px; font-size: 16px; font-weight: bold;
+    border-radius: 10px; cursor: pointer; width: 100%;
+    transition: 0.2s;
+  }
+  #download-btn:active { transform: scale(0.98); }
+  #download-btn:disabled { background: #444; color: #888; cursor: not-allowed; }
+  
+  #status { margin-top: 10px; font-size: 14px; color: #aaa; min-height: 20px; }
 </style>
 </head>
 <body>
 
-<div id="status-overlay">Loading Ad...</div>
-
+<!-- वीडियो प्लेयर -->
 <div id="player-container">
   <video id="player" controls playsinline preload="metadata"></video>
 </div>
 
+<!-- डाउनलोड बटन -->
+<div class="bottom-bar">
+  <button id="download-btn">⬇️ Download Video (Watch Ad)</button>
+  <p id="status">वीडियो लोड हो रही है...</p>
+</div>
+
 <script>
 (function () {
+  // --- 1. Telegram WebApp को इनिशियलाइज करें ---
   const tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch(e){} }
 
-  // URL ya Telegram start_param se Video ID nikaalein
+  // --- 2. URL या Telegram start_param से Video ID निकालें ---
   let vidId = null;
   if (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
       vidId = tg.initDataUnsafe.start_param;
@@ -48,52 +73,64 @@
   }
   
   const player = document.getElementById('player');
-  const statusOverlay = document.getElementById('status-overlay');
+  const statusEl = document.getElementById('status');
+  const downloadBtn = document.getElementById('download-btn');
 
   if (!vidId) {
-    alert("Video ID missing.");
+    statusEl.textContent = 'Error: Video ID missing.';
+    statusEl.style.color = '#ff6b6b';
     return;
   }
 
-  // Video source set karein
+  // --- 3. वीडियो सोर्स सेट करें (बिना किसी ऐड के तुरंत चलेगी) ---
   player.src = '/stream/' + encodeURIComponent(vidId);
+  
+  player.addEventListener('canplay', () => {
+      statusEl.textContent = 'वीडियो तैयार है।';
+      // बटन को एक्टिवेट करें ताकि यूजर ऐड देखकर डाउनलोड अनलॉक कर सके
+      downloadBtn.disabled = false;
+      // ऑटोप्ले की कोशिश करें
+      player.play().catch(e => console.log("Autoplay blocked, user needs to click play."));
+  });
 
-  // Adsgram Init (Naya Block ID: int-56048)
-  let AdController = null;
-  try {
-    if (window.Adsgram) {
-      AdController = window.Adsgram.init({ blockId: "int-56048" }); // <-- Yahan naya ID daala hai
+  // --- 4. Monetag ऐड को डाउनलोड बटन से जोड़ें ---
+  // Monetag स्क्रिप्ट लोड होने के बाद एक ग्लोबल फंक्शन देता है जैसे: show_1234567()
+  // आपको इसे अपने Monetag कोड से मिले फंक्शन नाम से बदलना होगा।
+  // उदाहरण के लिए, अगर आपका data-sdk="show_987654" है, तो फंक्शन show_987654() होगा।
+
+  // ध्यान दें: 'show_YOUR_ZONE_ID' को अपने असली फंक्शन नाम से बदलें
+  const adFunctionName = 'show_YOUR_ZONE_ID'; 
+
+  downloadBtn.addEventListener('click', function() {
+    // बटन को डिसेबल करें ताकि यूजर बार-बार क्लिक न करे
+    downloadBtn.disabled = true;
+    statusEl.textContent = 'ऐड लोड हो रहा है... कृपया प्रतीक्षा करें।';
+    statusEl.style.color = '#2ea6ff';
+
+    // चेक करें कि Monetag का फंक्शन लोड हो चुका है या नहीं
+    if (typeof window[adFunctionName] === 'function') {
+        // Monetag फंक्शन को कॉल करें (यह Promise रिटर्न करता है)
+        window[adFunctionName]().then(() => {
+            // ऐड पूरा होने पर यह कोड चलेगा
+            statusEl.textContent = '✅ डाउनलोड अनलॉक हो गया!';
+            statusEl.style.color = '#4caf50';
+            
+            // यहाँ आप अपना डाउनलोड लॉजिक डाल सकते हैं
+            // जैसे: window.open('/stream/' + vidId, '_blank');
+            
+        }).catch((error) => {
+            // अगर यूजर ऐड बंद कर देता है या कोई एरर आता है
+            console.warn('Ad error/skipped:', error);
+            statusEl.textContent = 'ऐड पूरा नहीं हुआ। कृपया दोबारा प्रयास करें।';
+            statusEl.style.color = '#ff6b6b';
+            downloadBtn.disabled = false; // बटन फिर से चालू करें
+        });
+    } else {
+        // अगर स्क्रिप्ट अभी तक लोड नहीं हुई है
+        statusEl.textContent = 'ऐड सर्विस लोड नहीं हो पाई। कृपया रीफ्रेश करें।';
+        statusEl.style.color = '#ff6b6b';
+        downloadBtn.disabled = false;
     }
-  } catch (e) {
-    console.warn('Adsgram init failed', e);
-  }
-
-  let adTriggered = false; // Taaki ad sirf ek baar aaye
-
-  // Jab video play hona shuru ho, tab 3 second ka timer start karein
-  player.addEventListener('play', () => {
-    if (adTriggered || !AdController) return;
-
-    setTimeout(async () => {
-      // Check karein ki video abhi bhi play ho rahi hai (user ne pause toh nahi kiya)
-      if (player.paused) return;
-
-      adTriggered = true;
-      player.pause(); // Ad se pehle video pause karein
-      statusOverlay.style.display = 'block';
-
-      try {
-        await AdController.show(); // Ad Show
-        console.log("Ad watched successfully");
-      } catch (e) {
-        console.warn("Ad skipped or failed", e);
-      }
-
-      // Ad ke baad video wapas play karein
-      statusOverlay.style.display = 'none';
-      player.play().catch(err => console.log("Playback error:", err));
-
-    }, 3000); // 3000 ms = 3 seconds
   });
 
 })();
